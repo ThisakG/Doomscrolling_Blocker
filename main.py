@@ -36,13 +36,16 @@ class DoomscrollDetector:
             "Success doesn't scroll itself into existence!",
             "That screen won't study for you!",
             "Your goals > Your feed. Remember that.",
+            "Your parents do not love you",
             "Future you is watching. They're disappointed.",
             "Every scroll is a step backward. Look up!",
             "The algorithm wins again. Pathetic.",
+            "You will be alone forever",
             "Is this really more important than your goals?",
             "Your productivity just left the chat.",
             "Doomscrolling detected! You're better than this!",
             "PUT. THE. PHONE. DOWN. NOW.",
+            "You re such a disappointment to your family",
             "This is why you're behind schedule."
         ]
 
@@ -55,6 +58,16 @@ class DoomscrollDetector:
         self.rickroll_path = "rickroll.mp4"
         self.rickroll_process = None
         self.is_rickrolling = False
+
+        # Detection state tracking for stability
+        self.doomscroll_count = 0
+        self.normal_count = 0
+        self.detection_threshold = 3  # Frames needed to confirm state change
+
+        # Detection state tracking for stability
+        self.doomscroll_count = 0
+        self.normal_count = 0
+        self.detection_threshold = 1  # Instant response
 
     def detect_doomscroll_dlib(self, frame, gray):
         """Detect doomscrolling using dlib landmarks"""
@@ -104,7 +117,7 @@ class DoomscrollDetector:
         return False
 
     def detect_doomscroll_opencv(self, frame, gray):
-        """Detect doomscrolling using OpenCV Haar Cascades"""
+        """Detect doomscrolling using OpenCV Haar Cascades with improved accuracy"""
         faces = self.face_cascade.detectMultiScale(gray, 1.3, 5)
 
         for (x, y, w, h) in faces:
@@ -117,27 +130,45 @@ class DoomscrollDetector:
 
             eyes = self.eye_cascade.detectMultiScale(roi_gray, 1.1, 5)
 
-            # Calculate face position - if face is in lower half = looking down
+            # Multiple detection criteria for better accuracy
+            detection_score = 0
+
+            # 1. Calculate face position - if face is in lower half = looking down
             face_center_y = y + h//2
             frame_height = frame.shape[0]
             face_position_ratio = face_center_y / frame_height
 
-            # If face is in lower portion of frame and tilted, likely looking down
-            is_looking_down = face_position_ratio > 0.55 and h < w * 1.2
+            if face_position_ratio > 0.58:
+                detection_score += 2
+            elif face_position_ratio > 0.52:
+                detection_score += 1
 
-            # Also check eye positions
+            # 2. Check face aspect ratio (looking down = face appears shorter/wider)
+            aspect_ratio = h / w
+            if aspect_ratio < 1.1:  # Face appears wider than normal
+                detection_score += 1
+
+            # 3. Also check eye positions
             if len(eyes) >= 2:
                 eye_y_positions = [y + ey + eh//2 for (ex, ey, ew, eh) in eyes]
                 avg_eye_y = sum(eye_y_positions) / len(eye_y_positions)
                 eye_position_in_face = (avg_eye_y - y) / h
 
                 # If eyes are in lower part of detected face region = looking down
-                if eye_position_in_face > 0.55:
-                    is_looking_down = True
+                if eye_position_in_face > 0.6:
+                    detection_score += 2
+                elif eye_position_in_face > 0.52:
+                    detection_score += 1
 
                 # Draw eye rectangles
                 for (ex, ey, ew, eh) in eyes:
                     cv2.rectangle(roi_color, (ex, ey), (ex+ew, ey+eh), (0, 255, 0), 2)
+            elif len(eyes) < 2:
+                # If we can't detect eyes well, might be looking down
+                detection_score += 1
+
+            # Decision: doomscrolling if score >= 3
+            is_looking_down = detection_score >= 3
 
             return is_looking_down
 
@@ -237,20 +268,36 @@ class DoomscrollDetector:
 
             # Detect doomscrolling
             if self.use_dlib:
-                is_doomscrolling = self.detect_doomscroll_dlib(frame, gray)
+                raw_detection = self.detect_doomscroll_dlib(frame, gray)
             else:
-                is_doomscrolling = self.detect_doomscroll_opencv(frame, gray)
+                raw_detection = self.detect_doomscroll_opencv(frame, gray)
+
+            # Stabilize detection with frame counting to avoid flickering
+            if raw_detection:
+                self.doomscroll_count += 1
+                self.normal_count = 0
+            else:
+                self.normal_count += 1
+                self.doomscroll_count = 0
+
+            # Only trigger if we've detected consistently for threshold frames
+            is_doomscrolling = self.doomscroll_count >= self.detection_threshold
+            is_normal = self.normal_count >= self.detection_threshold
 
             if is_doomscrolling:
                 self.show_roast(frame)
                 # Play rickroll when doomscrolling
                 self.play_rickroll()
-            else:
+            elif is_normal:
                 # Show encouraging message
                 cv2.putText(frame, "Good posture! Keep it up!", (10, 30),
                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
                 # Stop rickroll when back to normal
                 self.stop_rickroll()
+            else:
+                # Transitioning state - show neutral message
+                cv2.putText(frame, "Monitoring...", (10, 30),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
 
             # Display frame
             cv2.imshow('Doomscrolling Blocker', frame)
