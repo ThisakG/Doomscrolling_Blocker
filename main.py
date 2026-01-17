@@ -62,7 +62,7 @@ class DoomscrollDetector:
         # Detection state tracking for stability
         self.doomscroll_count = 0
         self.normal_count = 0
-        self.detection_threshold = 1  # Frames needed to confirm state change
+        self.detection_threshold = 3  # Frames needed to confirm state change
         self.was_doomscrolling = False # Track previous state to prevent false positives 
 
         # Detection state tracking for stability
