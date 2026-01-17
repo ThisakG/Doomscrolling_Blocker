@@ -62,7 +62,8 @@ class DoomscrollDetector:
         # Detection state tracking for stability
         self.doomscroll_count = 0
         self.normal_count = 0
-        self.detection_threshold = 3  # Frames needed to confirm state change
+        self.detection_threshold = 1  # Frames needed to confirm state change
+        self.was_doomscrolling = False # Track previous state to prevent false positives 
 
         # Detection state tracking for stability
         self.doomscroll_count = 0
@@ -199,8 +200,20 @@ class DoomscrollDetector:
                             )
                         except:
                             self.rickroll_process = subprocess.Popen(['xdg-open', self.rickroll_path])
-                else:  # Windows - Someone test on windows pls
-                    os.startfile(self.rickroll_path)
+                else:  # Windows - Someone test on windows pls - C:\Program Files\VideoLAN\VLC
+                   try:
+                        self.rickroll_process = subprocess.Popen(
+                        [
+                            r"C:\Program Files\VideoLAN\VLC\vlc.exe",
+                            "--play-and-exit",
+                            "--no-video-title-show",
+                            self.rickroll_path
+                        ],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL
+                    )
+                   except FileNotFoundError:
+                    print("VLC not found. Please update VLC path.")
 
             # Start video in background thread to avoid blocking
             video_thread = threading.Thread(target=start_video, daemon=True)
@@ -284,20 +297,26 @@ class DoomscrollDetector:
             is_doomscrolling = self.doomscroll_count >= self.detection_threshold
             is_normal = self.normal_count >= self.detection_threshold
 
+            if is_doomscrolling and not self.was_doomscrolling:
+                    # Doomscroll JUST started
+                    self.play_rickroll()
+
             if is_doomscrolling:
-                self.show_roast(frame)
-                # Play rickroll when doomscrolling
-                self.play_rickroll()
-            elif is_normal:
-                # Show encouraging message
-                cv2.putText(frame, "Good posture! Keep it up!", (10, 30),
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-                # Stop rickroll when back to normal
-                self.stop_rickroll()
-            else:
-                # Transitioning state - show neutral message
-                cv2.putText(frame, "Monitoring...", (10, 30),
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
+                    self.show_roast(frame)
+
+            if is_normal and self.was_doomscrolling:
+                    # Doomscroll JUST ended
+                    self.stop_rickroll()
+
+            if is_normal:
+                    cv2.putText(frame, "Good posture! Keep it up!", (10, 30),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+            elif not is_doomscrolling:
+                    cv2.putText(frame, "Monitoring...", (10, 30),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
+
+            # 🔹 Update previous state (THIS LINE IS CRITICAL)
+            self.was_doomscrolling = is_doomscrolling
 
             # Display frame
             cv2.imshow('Doomscrolling Blocker', frame)
