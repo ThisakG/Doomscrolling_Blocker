@@ -5,6 +5,7 @@ import time
 import threading
 import subprocess
 import os
+from playsound import playsound 
 
 class DoomscrollDetector:
     def __init__(self):
